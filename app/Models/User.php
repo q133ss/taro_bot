@@ -17,5 +17,12 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
-    protected $fillable = ['chat_id', 'name', 'surname', 'birth_date', 'birth_time', 'subscription', 'subscription_expires_at'];
+    protected $fillable = ['chat_id', 'name', 'surname', 'birth_date', 'birth_time', 'subscription', 'subscription_expires_at', 'podruzhka_free_used_at'];
+
+    protected $casts = [
+        'birth_date' => 'date',
+        'birth_time' => 'datetime:H:i',
+        'subscription_expires_at' => 'datetime',
+        'podruzhka_free_used_at' => 'datetime',
+    ];
 }
