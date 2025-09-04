@@ -25,21 +25,59 @@ class AIService
      */
     public function getAnswer(string $message, ?string $systemMessage = null): string
     {
-        try {
-            $messages = [];
+        $messages = [];
 
-            if ($systemMessage) {
-                $messages[] = [
-                    'role' => 'system',
-                    'content' => $systemMessage
-                ];
+        if ($systemMessage) {
+            $messages[] = [
+                'role' => 'system',
+                'content' => $systemMessage
+            ];
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $message
+        ];
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->apiKey}",
+                'Content-Type'  => 'application/json',
+            ])->timeout(30)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => $messages,
+                    'temperature' => $this->temperature,
+                    'max_tokens' => $this->maxTokens,
+                ]);
+
+            if ($response->failed()) {
+                Log::warning('OpenAI API failed', ['status' => $response->status(), 'body' => $response->body()]);
+                throw new \RuntimeException('OpenAI API request failed');
             }
 
-            $messages[] = [
-                'role' => 'user',
-                'content' => $message
-            ];
+            $data = $response->json();
+        } catch (\Throwable $e) {
+            Log::warning('OpenAI API error: '.$e->getMessage());
+            throw $e;
+        }
 
+        Log::info('OpenAI response: '.json_encode($data));
+
+        if (isset($data['choices'][0]['message']['content'])) {
+            return trim($data['choices'][0]['message']['content']);
+        }
+
+        throw new \RuntimeException('Empty response from OpenAI');
+    }
+
+    /**
+     * Универсальный метод для ведения диалога с сохранением контекста
+     * @param array<int, array{role:string,content:string}> $messages
+     */
+    public function chatWithContext(array $messages): string
+    {
+        try {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$this->apiKey}",
                 'Content-Type'  => 'application/json',
@@ -53,17 +91,16 @@ class AIService
 
             $data = $response->json();
 
-            \Log::info('OpenAI response: '.json_encode($data));
+            Log::info('OpenAI response: '.json_encode($data));
 
             if (isset($data['choices'][0]['message']['content'])) {
                 return trim($data['choices'][0]['message']['content']);
             }
 
-            // дружелюбное сообщение пользователю
-            return "К сожалению, сейчас я не могу подготовить расклад. Но не переживай — мы обязательно вернёмся к этому чуть позже и я помогу тебе с ответами.";
+            return 'Сейчас мне сложно поддержать диалог, попробуй чуть позже.';
         } catch (\Exception $e) {
             Log::warning("OpenAI API error: ".$e->getMessage());
-            return "К сожалению, сейчас я не могу подготовить расклад. Но не переживай — мы обязательно вернёмся к этому чуть позже и я помогу тебе с ответами.";
+            return 'Сейчас мне сложно поддержать диалог, попробуй чуть позже.';
         }
     }
 }
