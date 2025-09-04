@@ -10,6 +10,7 @@ use App\Models\HoroscopeReading;
 use App\Models\Reminder;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class ChatService
 {
@@ -359,7 +360,7 @@ class ChatService
         // Мягкое сообщение ожидания
         $this->tg->sendMessage($chatId, "Сейчас я посоветуюсь с картами и соберу расклад — это займёт пару секунд ✨");
 
-        $result = $this->ai->getAnswer($prompt);
+        $result = $this->askAi($prompt);
 
         if (!$result) {
             $result = "К сожалению, сейчас я не могу подготовить расклад. Но не переживай — мы вернёмся к этому чуть позже.";
@@ -480,8 +481,8 @@ class ChatService
             $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
             return;
         }
-
-        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+      
+        $reply = $this->askAi($text, $this->buildPodruzhkaSystemPrompt());
         if (mb_strlen($reply) > 300) {
             $reply = mb_substr($reply, 0, 300) . '...';
         }
@@ -510,7 +511,7 @@ class ChatService
             return;
         }
 
-        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+        $reply = $this->askAi($text, $this->buildPodruzhkaSystemPrompt());
         if (mb_strlen($reply) > 4000) {
             $reply = mb_substr($reply, 0, 4000) . '...';
         }
@@ -537,7 +538,8 @@ class ChatService
 
         $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
         $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
-        $result = $this->ai->getAnswer($prompt);
+
+        $result = $this->askAi($prompt);
 
         if (!$result) {
             $result = 'Сейчас не получается рассчитать код. Попробуй ещё раз позже.';
@@ -583,7 +585,7 @@ class ChatService
         $birth = $user->birth_date ? Carbon::parse($user->birth_date)->format('d.m.Y') : '';
         $prompt = $this->buildNumerologyPrompt($user->name ?? '', $user->surname ?? '', $birth);
         $this->tg->sendMessage($chatId, 'Собираю твою нумерологическую карту, подожди чуть-чуть ✨');
-        $result = $this->ai->getAnswer($prompt);
+        $result = $this->askAi($prompt);
 
         if (!$result) {
             $result = 'Сейчас не получается подготовить анализ. Попробуй позже.';
@@ -630,7 +632,7 @@ class ChatService
         $sign = $this->getZodiacSign($user->birth_date);
         $prompt = $this->buildHoroscopeFreePrompt($sign);
         $this->tg->sendMessage($chatId, 'Смотрю твою астрологическую волну, подожди пару секунд ✨');
-        $result = $this->ai->getAnswer($prompt);
+        $result = $this->askAi($prompt);
 
         if (!$result) {
             $result = 'Сейчас не получается построить гороскоп. Попробуй позже.';
@@ -679,7 +681,7 @@ class ChatService
         $time = $user->birth_time ? Carbon::parse($user->birth_time)->format('H:i') : 'неизвестно';
         $prompt = $this->buildHoroscopePrompt($user->name ?? '', $user->surname ?? '', $birth, $time);
         $this->tg->sendMessage($chatId, 'Готовлю твой подробный гороскоп, подожди немного ✨');
-        $result = $this->ai->getAnswer($prompt);
+        $result = $this->askAi($prompt);
 
         if (!$result) {
             $result = 'Сейчас не получается подготовить гороскоп. Попробуй позже.';
@@ -883,17 +885,27 @@ class ChatService
         }
 
         $messages = [
-            now()->addHours(6) => 'Спасибо, что провела день со мной. Если ты хочешь, чтобы я была рядом всегда — подключи подписку 💌',
-            now()->addHours(12) => 'Спасибо, что провела день со мной. Если ты хочешь, чтобы я была рядом всегда — подключи подписку 💌',
-            now()->addDays(3) => 'Я всё ещё помню твой вопрос… Давай продолжим? Подписка активирует все разделы.'
+            ['send_at' => now()->addHours(6), 'message' => 'Спасибо, что провела день со мной. Если ты хочешь, чтобы я была рядом всегда — подключи подписку 💌'],
+            ['send_at' => now()->addHours(12), 'message' => 'Спасибо, что провела день со мной. Если ты хочешь, чтобы я была рядом всегда — подключи подписку 💌'],
+            ['send_at' => now()->addDays(3), 'message' => 'Я всё ещё помню твой вопрос… Давай продолжим? Подписка активирует все разделы.'],
         ];
 
-        foreach ($messages as $time => $msg) {
+        foreach ($messages as $reminder) {
             Reminder::create([
                 'chat_id' => $user->chat_id,
-                'message' => $msg,
-                'send_at' => $time,
+                'message' => $reminder['message'],
+                'send_at' => $reminder['send_at'],
             ]);
+        }
+    }
+
+    protected function askAi(string $prompt, ?string $system = null): ?string
+    {
+        try {
+            return $this->ai->getAnswer($prompt, $system);
+        } catch (\Throwable $e) {
+            Log::warning('AI error: '.$e->getMessage());
+            return null;
         }
     }
 }
