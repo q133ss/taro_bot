@@ -152,7 +152,6 @@ class ChatService
             case 'horoscope_menu':
                 $this->routeHoroscopeMenu($session, $user, $chatId, $text);
                 break;
-
             default:
                 // На всякий случай — возвращаем в главное меню
                 $this->showMainMenu($chatId, $user);
@@ -210,7 +209,7 @@ class ChatService
                     $session->state = 'numerology_menu';
                 }
                 break;
-
+            
             case '♒ Гороскоп':
                 if (!$user->surname) {
                     $this->tg->sendMessage($chatId, 'Пожалуйста, укажи свою фамилию:');
@@ -393,7 +392,7 @@ class ChatService
         ];
         $this->tg->sendMessage($chatId, $text, $keyboard);
     }
-
+  
     protected function routeNumerologyMenu($session, User $user, int $chatId, string $text)
     {
         switch ($text) {
