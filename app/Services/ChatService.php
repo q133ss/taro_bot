@@ -709,6 +709,297 @@ class ChatService
         $session->state = 'horoscope_menu';
     }
 
+    protected function showNumerologyMenu(int $chatId, User $user)
+    {
+        $text = 'Выбери формат нумерологического разбора:';
+        $keyboard = [
+            ['Бесплатно', 'Полный анализ'],
+            ['Назад в меню']
+        ];
+        $this->tg->sendMessage($chatId, $text, $keyboard);
+    }
+
+    protected function showHoroscopeMenu(int $chatId, User $user)
+    {
+        $text = 'Выбери формат гороскопа:';
+        $keyboard = [
+            ['Бесплатно', 'Полный гороскоп'],
+            ['Назад в меню']
+        ];
+        $this->tg->sendMessage($chatId, $text, $keyboard);
+    }
+
+    protected function routeNumerologyMenu($session, User $user, int $chatId, string $text)
+    {
+        switch ($text) {
+            case 'Бесплатно':
+                $this->handleNumerologyFree($session, $user, $chatId);
+                break;
+
+            case 'Полный анализ':
+                $this->handleNumerologyPaid($session, $user, $chatId);
+                break;
+
+            case 'Подписка':
+                $this->tg->sendMessage($chatId, 'Выбор платных подписок пока недоступен.', [['Назад в меню']]);
+                break;
+
+            case 'Задать вопрос':
+                $this->tg->sendMessage($chatId, 'Функция дополнительных вопросов пока недоступна.', [['Назад в меню']]);
+                break;
+
+            case 'Назад в меню':
+                $this->showMainMenu($chatId, $user);
+                $session->state = 'main_menu';
+                break;
+
+            default:
+                $this->showNumerologyMenu($chatId, $user);
+                break;
+        }
+    }
+
+    protected function routeHoroscopeMenu($session, User $user, int $chatId, string $text)
+    {
+        switch ($text) {
+            case 'Бесплатно':
+                $this->handleHoroscopeFree($session, $user, $chatId);
+                break;
+
+            case 'Полный гороскоп':
+                $this->handleHoroscopePaid($session, $user, $chatId);
+                break;
+
+            case 'Подписка':
+                $this->tg->sendMessage($chatId, 'Выбор платных подписок пока недоступен.', [['Назад в меню']]);
+                break;
+
+            case 'Назад в меню':
+                $this->showMainMenu($chatId, $user);
+                $session->state = 'main_menu';
+                break;
+
+            default:
+                $this->showHoroscopeMenu($chatId, $user);
+                break;
+        }
+    }
+
+    protected function handlePodruzhkaFree($session, User $user, int $chatId, string $text)
+    {
+        if ($text === 'Закончить разговор') {
+            $this->tg->sendMessage($chatId, 'Спасибо, что доверилась мне. Помни: ты ценная и важная. Я всегда рядом, когда захочешь поговорить.');
+            $this->showMainMenu($chatId, $user);
+            $session->state = 'main_menu';
+            return;
+        }
+
+        if ($this->isDistressMessage($text)) {
+            $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
+            return;
+        }
+
+        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+        if (mb_strlen($reply) > 300) {
+            $reply = mb_substr($reply, 0, 300) . '...';
+        }
+
+        $final = $reply . "\n\n" .
+            "Спасибо, что написала. Я рядом, даже когда трудно. 💗\n" .
+            "В платной подписке ты сможешь писать мне в любое время, сколько захочешь, и я буду поддерживать тебя, давать практики, советы и помогать шаг за шагом.\n" .
+            "👉 Подключи подписку — я с тобой.";
+
+        $this->tg->sendMessage($chatId, $final, [['Подписка', 'Назад в меню']]);
+        $session->state = 'main_menu';
+    }
+
+    protected function handlePodruzhkaChat($session, User $user, int $chatId, string $text)
+    {
+        if ($text === 'Закончить разговор') {
+            $this->tg->sendMessage($chatId, 'Спасибо, что доверилась мне. Помни: ты ценная и важная. Я всегда рядом, когда захочешь поговорить.');
+            $this->showMainMenu($chatId, $user);
+            $session->state = 'main_menu';
+            return;
+        }
+
+        if ($this->isDistressMessage($text)) {
+            $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
+            return;
+        }
+
+        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+        if (mb_strlen($reply) > 4000) {
+            $reply = mb_substr($reply, 0, 4000) . '...';
+        }
+
+        $this->tg->sendMessage($chatId, $reply, [['Закончить разговор']]);
+        $session->state = 'podruzhka_chat';
+    }
+
+    protected function handleNumerologyFree($session, User $user, int $chatId)
+    {
+        $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
+        $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается рассчитать код. Попробуй ещё раз позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $final = $result . "\n\n" .
+            "Это твой денежный код. Он помогает понять, как ты взаимодействуешь с финансовыми потоками. 💸\n" .
+            "В платной версии я сделаю для тебя подробный разбор: твои сильные стороны, зоны роста, кармические задачи и код активации изобилия. ✨\n" .
+            "👉 Подпишись, чтобы получить расширенный нумерологический портрет.";
+
+        $this->tg->sendMessage($chatId, $final, [['Подписка', 'Назад в меню']]);
+
+        NumerologyReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'type' => 'money_code',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'numerology_menu';
+    }
+
+    protected function handleNumerologyPaid($session, User $user, int $chatId)
+    {
+        if ($user->subscription !== 'paid') {
+            $this->tg->sendMessage($chatId,
+                'Подробный нумерологический анализ доступен по подписке.',
+                [['Подписка', 'Назад в меню']]
+            );
+            $session->state = 'numerology_menu';
+            return;
+        }
+
+        $birth = $user->birth_date ? Carbon::parse($user->birth_date)->format('d.m.Y') : '';
+        $prompt = $this->buildNumerologyPrompt($user->name ?? '', $user->surname ?? '', $birth);
+        $this->tg->sendMessage($chatId, 'Собираю твою нумерологическую карту, подожди чуть-чуть ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается подготовить анализ. Попробуй позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $this->tg->sendMessage($chatId, $result, [['Задать вопрос', 'Назад в меню']]);
+
+        NumerologyReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'type' => 'full',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'numerology_menu';
+    }
+
+    protected function handleHoroscopeFree($session, User $user, int $chatId)
+    {
+        $sign = $this->getZodiacSign($user->birth_date);
+        $prompt = $this->buildHoroscopeFreePrompt($sign);
+        $this->tg->sendMessage($chatId, 'Смотрю твою астрологическую волну, подожди пару секунд ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается построить гороскоп. Попробуй позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $final = "Твой знак — {$sign}.\n" . $result . "\n\n" .
+            "Это краткий взгляд на твою текущую астрологическую волну.\n" .
+            "В платной версии ты получишь полный гороскоп по всем сферам жизни: любовь, деньги, самореализация. 🌌\n" .
+            "👉 Подключи подписку, чтобы узнать свою судьбу глубже.";
+
+        $this->tg->sendMessage($chatId, $final, [['Подписка', 'Назад в меню']]);
+
+        HoroscopeReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'birth_time' => $user->birth_time,
+            'sign' => $sign,
+            'type' => 'daily',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'horoscope_menu';
+    }
+
+    protected function handleHoroscopePaid($session, User $user, int $chatId)
+    {
+        if ($user->subscription !== 'paid') {
+            $this->tg->sendMessage($chatId,
+                'Полный гороскоп доступен по подписке.',
+                [['Подписка', 'Назад в меню']]
+            );
+            $session->state = 'horoscope_menu';
+            return;
+        }
+
+        $birth = $user->birth_date ? Carbon::parse($user->birth_date)->format('d.m.Y') : '';
+        $time = $user->birth_time ? Carbon::parse($user->birth_time)->format('H:i') : 'неизвестно';
+        $prompt = $this->buildHoroscopePrompt($user->name ?? '', $user->surname ?? '', $birth, $time);
+        $this->tg->sendMessage($chatId, 'Готовлю твой подробный гороскоп, подожди немного ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается подготовить гороскоп. Попробуй позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $this->tg->sendMessage($chatId, $result, [['Назад в меню']]);
+
+        HoroscopeReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'birth_time' => $user->birth_time,
+            'sign' => $this->getZodiacSign($user->birth_date),
+            'type' => 'full',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'horoscope_menu';
+    }
+
     /* ---------- Вспомогательные утилиты ---------- */
 
     protected function isPositive(string $text): bool
