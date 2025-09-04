@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\TgSession;
 use App\Models\TaroReading;
+use App\Models\NumerologyReading;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -88,6 +89,22 @@ class ChatService
                 $this->handleTaroQuestion($session, $user, $chatId, $text);
                 break;
 
+            case 'numerology_ask_surname':
+                if (empty($text)) {
+                    $this->tg->sendMessage($chatId, 'Пожалуйста, напиши фамилию.');
+                    break;
+                }
+                $user->surname = mb_substr($text, 0, 100);
+                $user->save();
+
+                $this->showNumerologyMenu($chatId, $user);
+                $session->state = 'numerology_menu';
+                break;
+
+            case 'numerology_menu':
+                $this->routeNumerologyMenu($session, $user, $chatId, $text);
+                break;
+
             default:
                 // На всякий случай — возвращаем в главное меню
                 $this->showMainMenu($chatId, $user);
@@ -137,6 +154,14 @@ class ChatService
                 break;
 
             case '🔢 Нумерология':
+                if (!$user->surname) {
+                    $this->tg->sendMessage($chatId, 'Пожалуйста, укажи свою фамилию:');
+                    $session->state = 'numerology_ask_surname';
+                } else {
+                    $this->showNumerologyMenu($chatId, $user);
+                    $session->state = 'numerology_menu';
+                }
+                break;
             case '♒ Гороскоп':
             case '💬 Подружка':
             case 'Подписка':
@@ -285,6 +310,125 @@ class ChatService
         $session->state = 'taro_menu';
     }
 
+    protected function showNumerologyMenu(int $chatId, User $user)
+    {
+        $text = 'Выбери формат нумерологического разбора:';
+        $keyboard = [
+            ['Бесплатно', 'Полный анализ'],
+            ['Назад в меню']
+        ];
+        $this->tg->sendMessage($chatId, $text, $keyboard);
+    }
+
+    protected function routeNumerologyMenu($session, User $user, int $chatId, string $text)
+    {
+        switch ($text) {
+            case 'Бесплатно':
+                $this->handleNumerologyFree($session, $user, $chatId);
+                break;
+
+            case 'Полный анализ':
+                $this->handleNumerologyPaid($session, $user, $chatId);
+                break;
+
+            case 'Подписка':
+                $this->tg->sendMessage($chatId, 'Выбор платных подписок пока недоступен.', [['Назад в меню']]);
+                break;
+
+            case 'Задать вопрос':
+                $this->tg->sendMessage($chatId, 'Функция дополнительных вопросов пока недоступна.', [['Назад в меню']]);
+                break;
+
+            case 'Назад в меню':
+                $this->showMainMenu($chatId, $user);
+                $session->state = 'main_menu';
+                break;
+
+            default:
+                $this->showNumerologyMenu($chatId, $user);
+                break;
+        }
+    }
+
+    protected function handleNumerologyFree($session, User $user, int $chatId)
+    {
+        $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
+        $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается рассчитать код. Попробуй ещё раз позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $final = $result . "\n\n" .
+            'Это твой денежный код. Он помогает понять, как ты взаимодействуешь с финансовыми потоками. 💸\n' .
+            'В платной версии я сделаю для тебя подробный разбор: твои сильные стороны, зоны роста, кармические задачи и код активации изобилия. ✨\n' .
+            '👉 Подпишись, чтобы получить расширенный нумерологический портрет.';
+
+        $this->tg->sendMessage($chatId, $final, [['Подписка', 'Назад в меню']]);
+
+        NumerologyReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'type' => 'money_code',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'numerology_menu';
+    }
+
+    protected function handleNumerologyPaid($session, User $user, int $chatId)
+    {
+        if ($user->subscription !== 'paid') {
+            $this->tg->sendMessage($chatId,
+                'Подробный нумерологический анализ доступен по подписке.',
+                [['Подписка', 'Назад в меню']]
+            );
+            $session->state = 'numerology_menu';
+            return;
+        }
+
+        $birth = $user->birth_date ? Carbon::parse($user->birth_date)->format('d.m.Y') : '';
+        $prompt = $this->buildNumerologyPrompt($user->name ?? '', $user->surname ?? '', $birth);
+        $this->tg->sendMessage($chatId, 'Собираю твою нумерологическую карту, подожди чуть-чуть ✨');
+        $result = $this->ai->getAnswer($prompt);
+
+        if (!$result) {
+            $result = 'Сейчас не получается подготовить анализ. Попробуй позже.';
+        }
+
+        if (mb_strlen($result) > 4000) {
+            $result = mb_substr($result, 0, 4000) . '...';
+        }
+
+        $this->tg->sendMessage($chatId, $result, [['Задать вопрос', 'Назад в меню']]);
+
+        NumerologyReading::create([
+            'chat_id' => $user->chat_id,
+            'user_name' => $user->name,
+            'surname' => $user->surname,
+            'birth_date' => $user->birth_date,
+            'type' => 'full',
+            'result' => $result,
+            'meta' => [
+                'generated_at' => now()->toDateTimeString(),
+                'prompt' => $this->shorten($prompt, 800),
+            ],
+        ]);
+
+        $session->state = 'numerology_menu';
+    }
+
     /* ---------- Вспомогательные утилиты ---------- */
 
     protected function isPositive(string $text): bool
@@ -302,6 +446,23 @@ class ChatService
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    protected function buildMoneyCodePrompt(string $name, ?string $birthDate): string
+    {
+        $birth = $birthDate ? Carbon::parse($birthDate)->format('d.m.Y') : '';
+        return "На основе имени {$name} и даты рождения {$birth} вычисли денежный (финансовый) код. " .
+            "Верни одну цифру и краткое пояснение (1-2 предложения). Отвечай по-русски.";
+    }
+
+    protected function buildNumerologyPrompt(string $name, string $surname, string $birthDate): string
+    {
+        $system = "Ты — дружелюбный и заботливый нумеролог. Отвечай по-русски.";
+        $instruction = "Рассчитай и расшифруй ключевые числа нумерологии по имени {$name}, фамилии {$surname} и дате рождения {$birthDate}. " .
+            "Укажи число жизненного пути, число судьбы, число души, число личности, кармические долги и задачи, матрицу Пифагора. " .
+            "Сформируй структурированный отчёт: основные числа с кратким описанием и влиянием, текстовый прогноз 700-1500 символов по сферам (личность и потенциал, карьера и деньги, отношения и семья, сильные и слабые стороны, подсказки для настоящего периода жизни).";
+
+        return $system . "\n\n" . $instruction;
     }
 
     /**
