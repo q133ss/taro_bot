@@ -538,6 +538,7 @@ class ChatService
 
         $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
         $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
+
         $result = $this->askAi($prompt);
 
         if (!$result) {
