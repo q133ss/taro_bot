@@ -483,6 +483,12 @@ class ChatService
         }
 
         $reply = $this->askAi($text, $this->buildPodruzhkaSystemPrompt());
+        if (!$reply) {
+            $this->tg->sendMessage($chatId, 'Сейчас не получается ответить. Попробуй ещё раз чуть позже.', [['Назад в меню']]);
+            $session->state = 'main_menu';
+            return;
+        }
+
         if (mb_strlen($reply) > 300) {
             $reply = mb_substr($reply, 0, 300) . '...';
         }
@@ -512,6 +518,12 @@ class ChatService
         }
 
         $reply = $this->askAi($text, $this->buildPodruzhkaSystemPrompt());
+        if (!$reply) {
+            $this->tg->sendMessage($chatId, 'Сейчас не получается ответить. Давай попробуем позже.', [['Закончить разговор']]);
+            $session->state = 'podruzhka_chat';
+            return;
+        }
+
         if (mb_strlen($reply) > 4000) {
             $reply = mb_substr($reply, 0, 4000) . '...';
         }
@@ -538,7 +550,6 @@ class ChatService
 
         $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
         $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
-
         $result = $this->askAi($prompt);
 
         if (!$result) {
@@ -567,7 +578,6 @@ class ChatService
                 'prompt' => $this->shorten($prompt, 800),
             ],
         ]);
-
         $session->state = 'main_menu';
     }
 
