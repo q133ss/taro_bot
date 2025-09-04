@@ -15,7 +15,6 @@ return new class extends Migration
             $table->id();
             $table->bigInteger('chat_id')->unique();
             $table->string('name')->nullable();
-            $table->string('surname')->nullable();
             $table->date('birth_date')->nullable();
             $table->enum('subscription', ['free', 'paid'])->default('free');
             $table->timestamp('subscription_expires_at')->nullable();
