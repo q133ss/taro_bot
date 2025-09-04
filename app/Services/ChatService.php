@@ -481,7 +481,7 @@ class ChatService
             $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
             return;
         }
-
+      
         $reply = $this->askAi($text, $this->buildPodruzhkaSystemPrompt());
         if (mb_strlen($reply) > 300) {
             $reply = mb_substr($reply, 0, 300) . '...';
@@ -538,6 +538,7 @@ class ChatService
 
         $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
         $this->tg->sendMessage($chatId, 'Считаю твой денежный код, подожди пару секунд ✨');
+
         $result = $this->askAi($prompt);
 
         if (!$result) {
