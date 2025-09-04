@@ -153,6 +153,14 @@ class ChatService
                 $this->routeHoroscopeMenu($session, $user, $chatId, $text);
                 break;
 
+            case 'podruzhka_free':
+                $this->handlePodruzhkaFree($session, $user, $chatId, $text);
+                break;
+
+            case 'podruzhka_chat':
+                $this->handlePodruzhkaChat($session, $user, $chatId, $text);
+                break;
+
             default:
                 // На всякий случай — возвращаем в главное меню
                 $this->showMainMenu($chatId, $user);
@@ -228,8 +236,16 @@ class ChatService
                 break;
 
             case '💬 Подружка':
+                $this->tg->sendMessage($chatId,
+                    "Привет, я твоя Подружка. Можешь рассказать мне всё, что у тебя на душе. Я рядом, выслушаю, пойму",
+                    [['Закончить разговор']]
+                );
+
+                $session->state = $user->subscription === 'paid' ? 'podruzhka_chat' : 'podruzhka_free';
+                break;
+
             case 'Подписка':
-                // Для остальных — заглушки (реализованы отдельно)
+                // Заглушка для подписки
                 $this->tg->sendMessage($chatId, "Этот раздел пока в разработке. Выбери, пожалуйста, другой раздел или вернись позже.", [['Назад в меню']]);
                 break;
 
@@ -450,6 +466,57 @@ class ChatService
         }
     }
 
+    protected function handlePodruzhkaFree($session, User $user, int $chatId, string $text)
+    {
+        if ($text === 'Закончить разговор') {
+            $this->tg->sendMessage($chatId, 'Спасибо, что доверилась мне. Помни: ты ценная и важная. Я всегда рядом, когда захочешь поговорить.');
+            $this->showMainMenu($chatId, $user);
+            $session->state = 'main_menu';
+            return;
+        }
+
+        if ($this->isDistressMessage($text)) {
+            $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
+            return;
+        }
+
+        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+        if (mb_strlen($reply) > 300) {
+            $reply = mb_substr($reply, 0, 300) . '...';
+        }
+
+        $final = $reply . "\n\n" .
+            "Спасибо, что написала. Я рядом, даже когда трудно. 💗\n" .
+            "В платной подписке ты сможешь писать мне в любое время, сколько захочешь, и я буду поддерживать тебя, давать практики, советы и помогать шаг за шагом.\n" .
+            "👉 Подключи подписку — я с тобой.";
+
+        $this->tg->sendMessage($chatId, $final, [['Подписка', 'Назад в меню']]);
+        $session->state = 'main_menu';
+    }
+
+    protected function handlePodruzhkaChat($session, User $user, int $chatId, string $text)
+    {
+        if ($text === 'Закончить разговор') {
+            $this->tg->sendMessage($chatId, 'Спасибо, что доверилась мне. Помни: ты ценная и важная. Я всегда рядом, когда захочешь поговорить.');
+            $this->showMainMenu($chatId, $user);
+            $session->state = 'main_menu';
+            return;
+        }
+
+        if ($this->isDistressMessage($text)) {
+            $this->tg->sendMessage($chatId, 'Если тебе очень тяжело, пожалуйста, обратись к специалисту. Я рядом, но живой человек — лучшее решение в таких ситуациях.', [['Закончить разговор']]);
+            return;
+        }
+
+        $reply = $this->ai->getAnswer($text, $this->buildPodruzhkaSystemPrompt());
+        if (mb_strlen($reply) > 4000) {
+            $reply = mb_substr($reply, 0, 4000) . '...';
+        }
+
+        $this->tg->sendMessage($chatId, $reply, [['Закончить разговор']]);
+        $session->state = 'podruzhka_chat';
+    }
+
     protected function handleNumerologyFree($session, User $user, int $chatId)
     {
         $prompt = $this->buildMoneyCodePrompt($user->name ?? '', $user->birth_date);
@@ -638,6 +705,22 @@ class ChatService
         if (!preg_match('/^\d{2}:\d{2}$/', $text)) return false;
         [$h, $m] = explode(':', $text);
         return $h >= 0 && $h < 24 && $m >= 0 && $m < 60;
+    }
+
+    protected function buildPodruzhkaSystemPrompt(): string
+    {
+        return 'Ты — добрая, понимающая, внимательная подруга. Твоя задача — поддерживать, выслушивать, помогать словами и мягко направлять, если нужно. Никакой оценки. Ты можешь говорить с юмором, тепло, но всегда с уважением. Избегай клише и сухих фраз.';
+    }
+
+    protected function isDistressMessage(string $text): bool
+    {
+        $t = mb_strtolower($text);
+        foreach (["суиц", "самоуб", "убью", "смерть", "умереть"] as $word) {
+            if (str_contains($t, $word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected function buildMoneyCodePrompt(string $name, ?string $birthDate): string

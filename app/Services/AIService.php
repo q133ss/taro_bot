@@ -66,4 +66,37 @@ class AIService
             return "К сожалению, сейчас я не могу подготовить расклад. Но не переживай — мы обязательно вернёмся к этому чуть позже и я помогу тебе с ответами.";
         }
     }
+
+    /**
+     * Универсальный метод для ведения диалога с сохранением контекста
+     * @param array<int, array{role:string,content:string}> $messages
+     */
+    public function chat(array $messages): string
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$this->apiKey}",
+                'Content-Type'  => 'application/json',
+            ])->timeout(30)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => $messages,
+                    'temperature' => $this->temperature,
+                    'max_tokens' => $this->maxTokens,
+                ]);
+
+            $data = $response->json();
+
+            Log::info('OpenAI response: '.json_encode($data));
+
+            if (isset($data['choices'][0]['message']['content'])) {
+                return trim($data['choices'][0]['message']['content']);
+            }
+
+            return 'Сейчас мне сложно поддержать диалог, попробуй чуть позже.';
+        } catch (\Exception $e) {
+            Log::warning("OpenAI API error: ".$e->getMessage());
+            return 'Сейчас мне сложно поддержать диалог, попробуй чуть позже.';
+        }
+    }
 }
