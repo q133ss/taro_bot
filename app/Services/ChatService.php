@@ -578,7 +578,6 @@ class ChatService
                 'prompt' => $this->shorten($prompt, 800),
             ],
         ]);
-
         $session->state = 'main_menu';
     }
 
